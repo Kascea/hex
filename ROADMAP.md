@@ -273,6 +273,13 @@ the Hex UI becomes a client. Today the running app serves
 first; the service keeps that contract, so stream clients such as Seer don't
 change.
 
+## Look To Focus
+
+Not started. Look at a text field and press the dictation shortcut: webcam
+gaze, snapped to editable elements through Accessibility, focuses that field
+before the paste. A debug-only spike measures accuracy first; it becomes a
+Labs feature only if it passes ([plan](docs/plans/look-to-focus.md)).
+
 ## Deliberate Deferrals
 
 Do not generalize the `~/.config/hex` TypeScript transformation config into a
