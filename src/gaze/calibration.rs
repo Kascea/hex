@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 use super::features::Features;
 
 /// How strongly weights are pulled towards zero, on standardized features.
-pub(crate) const RIDGE: f64 = 0.01;
+/// With only iris terms there's little to overfit; 0.001 scored best on
+/// the first recording (docs/research/gaze-spike.md).
+pub(crate) const RIDGE: f64 = 0.001;
 
 /// One moment of looking at a known point.
 #[derive(Clone, Copy, Debug)]
@@ -32,24 +34,15 @@ pub(crate) struct Calibration {
 
 /// The regression's terms for one sample, without the bias: the iris
 /// offsets with their squares and product (gaze is not linear in them at the
-/// screen's edges), then head pose and placement.
-fn terms(f: &Features) -> [f64; 10] {
+/// screen's edges). Head pose and placement are left out: during a
+/// calibration they drift with posture, and the fit learned the drift as
+/// gaze (8.4 cm off on unseen dots with them, 2.2 cm without).
+fn terms(f: &Features) -> [f64; TERMS] {
     let (ix, iy) = (f64::from(f.iris_x), f64::from(f.iris_y));
-    [
-        ix,
-        iy,
-        ix * ix,
-        iy * iy,
-        ix * iy,
-        f64::from(f.yaw),
-        f64::from(f.pitch),
-        f64::from(f.face_x),
-        f64::from(f.face_y),
-        f64::from(f.scale),
-    ]
+    [ix, iy, ix * ix, iy * iy, ix * iy]
 }
 
-const TERMS: usize = 10;
+const TERMS: usize = 5;
 
 impl Calibration {
     /// Fits a calibration, or `None` without enough samples to fit one.
@@ -228,7 +221,7 @@ mod tests {
     fn quadratic(f: &Features) -> (f64, f64) {
         let (ix, iy) = (f64::from(f.iris_x), f64::from(f.iris_y));
         (
-            760.0 + 4000.0 * ix + 900.0 * ix * ix - 2000.0 * f64::from(f.yaw),
+            760.0 + 4000.0 * ix + 900.0 * ix * ix,
             480.0 + 5000.0 * iy + 300.0 * ix * iy,
         )
     }

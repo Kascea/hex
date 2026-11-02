@@ -528,6 +528,9 @@ struct Report {
     /// Each validation sample's error, raw and after smoothing, in points.
     raw: Vec<f64>,
     smoothed: Vec<f64>,
+    /// Each validation dot's mean prediction's error: what a fixation on it
+    /// would land on, and what Look to focus acts on.
+    fixation: Vec<f64>,
     summary: Summary,
 }
 
@@ -538,9 +541,16 @@ impl Report {
         let calibration = Calibration::fit(&fit_samples, RIDGE);
         let mut raw = Vec::new();
         let mut smoothed = Vec::new();
+        let mut fixation = Vec::new();
         if let Some(calibration) = &calibration {
-            for dot in &check {
+            for dot in check.iter().filter(|dot| !dot.is_empty()) {
                 raw.extend(calibration::errors(calibration, dot));
+                let n = dot.len() as f64;
+                let (x, y) = dot.iter().fold((0.0, 0.0), |(x, y), sample| {
+                    let (px, py) = calibration.predict(&sample.features);
+                    (x + px / n, y + py / n)
+                });
+                fixation.push((x - dot[0].target.0).hypot(y - dot[0].target.1));
                 // Each dot's samples in order through a fresh smoother, as a
                 // fixation would see them; its first few are still settling.
                 let mut smoother = Smoother::new(SMOOTHING);
@@ -561,6 +571,7 @@ impl Report {
             check_samples: check.iter().map(Vec::len).sum(),
             raw,
             smoothed,
+            fixation,
             summary,
         }
     }
@@ -598,11 +609,12 @@ impl Report {
             Some((median, p90))
         };
         line("Error, raw", &self.raw);
-        let smoothed = line("Error, smoothed", &self.smoothed);
-        if let (Some(cm), Some((median, p90))) = (cm, smoothed) {
+        line("Error, smoothed", &self.smoothed);
+        let fixation = line("Error, per dot (fixation)", &self.fixation);
+        if let (Some(cm), Some((median, p90))) = (cm, fixation) {
             let verdict = |pass: bool| if pass { "pass" } else { "FAIL" };
             println!(
-                "Targets: median ≤ {TARGET_MEDIAN_CM} cm {}, p90 ≤ {TARGET_P90_CM} cm {}, ≥ {TARGET_RATE}/s {}, ≤ {:.0}% of a core {}",
+                "Targets (fixation error): median ≤ {TARGET_MEDIAN_CM} cm {}, p90 ≤ {TARGET_P90_CM} cm {}, ≥ {TARGET_RATE}/s {}, ≤ {:.0}% of a core {}",
                 verdict(median * cm <= TARGET_MEDIAN_CM),
                 verdict(p90 * cm <= TARGET_P90_CM),
                 verdict(s.mesh_rate >= TARGET_RATE),

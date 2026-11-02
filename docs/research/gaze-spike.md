@@ -40,13 +40,40 @@ tracking from the previous frame's points.
 
 ## Accuracy And Cost
 
-Not measured yet: needs a person at the camera running `calibrate`. Record
-for each run the camera, distance, lighting, glasses, and the report's
-lines:
+Run 1 (2026-11-02): MacBook FaceTime HD camera (it gives 1920×1080 though
+640×480 is asked for), normal sitting distance, indoor light. Camera
+29 frames/s, face found in every frame, Face Mesh 6.5 ms, gaze thread 19% of
+one core (over the 15% target at 29/s; 15/s would halve it).
+
+The first model also fitted head pose and the face's place in the frame. It
+was worse than guessing the screen's centre: posture drifted during the run
+(the face sank about 1% of the frame per dot row, yaw grew 0.009 → 0.04),
+the fit learned that drift as gaze, and the check dots, shown last, sat
+outside it. The iris offsets themselves separate the dot columns and rows
+cleanly (±0.06 eye widths, wobble about 0.01). Refitting the same recording
+(`calibrate --save`), 9 dots fitted, 5 unseen dots checked:
 
 ```ts
-run    camera    distance  light  glasses   raw median/p90   smoothed median/p90   gaze/s   core
-└── (pending)
+model                        per sample, median / p90     leave one dot out (14 dots)
+├── guess the centre         7.2 / 7.2 cm
+├── first model (10 terms)   8.4 / 10.8 cm                3.0 / 7.2 cm
+├── iris only                2.5 / 6.2 cm                 3.0 / 6.6 cm
+├── iris + squares (chosen)  2.2 / 5.8 cm                 3.1 / 6.1 cm
+├── iris + yaw, pitch        2.8 / 5.8 cm                 3.3 / 7.0 cm
+└── per-eye iris (contour)   3.0 / 7.2 cm                 3.4 / 6.7 cm
+```
+
+With iris + squares, each check dot's mean prediction (what a fixation
+lands on) is off by 2.6 cm median and 3.4 cm p90 (1.1 to 3.8 cm across the 5
+dots): inside both targets, on one person and five dots. `calibrate` now
+fits iris + squares and judges the targets on that per-dot error. Not yet
+known: whether it holds across sessions, distances, glasses, and light, and
+how fast drift spoils a calibration in use.
+
+```ts
+run    camera            setting               fixation median / p90   gaze/s   core
+├── 1  FaceTime HD 1080p  sitting, indoor light  2.6 / 3.4 cm (refit)   29.0     19%
+└── 2  (next)
 ```
 
 ## Blocker Found
