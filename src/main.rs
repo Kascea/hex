@@ -27,6 +27,8 @@ mod dictation;
 mod durable;
 #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
 mod feedback;
+#[cfg(all(target_os = "macos", debug_assertions, feature = "gaze"))]
+mod gaze;
 mod history;
 #[cfg(target_os = "macos")]
 mod keyboard;
@@ -202,6 +204,12 @@ enum DevCommand {
         /// WAV files, joined with 300 ms of silence.
         #[arg(required = true)]
         wavs: Vec<PathBuf>,
+    },
+    #[cfg(all(debug_assertions, feature = "gaze"))]
+    /// Measure webcam gaze for Look to focus (needs the `gaze` feature).
+    Gaze {
+        #[command(subcommand)]
+        command: gaze::spike::GazeCommand,
     },
     /// Render offline audio through the Hex Microphone voice filter.
     VoiceFilter {
@@ -429,6 +437,8 @@ fn main() -> Result<()> {
                         println!("{}", bundle.display());
                         return Ok(());
                     }
+                    #[cfg(feature = "gaze")]
+                    DevCommand::Gaze { command } => return gaze::spike::run(command),
                     DevCommand::VoiceFilter { .. } => unreachable!("handled before startup"),
                 };
                 let reply = local_api::call_developer(&command)?;

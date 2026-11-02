@@ -29,6 +29,10 @@ embed-resource = "3"
 
 [features]
 onnx-benchmark = ["dep:transcribe-rs"]
+# Look to focus's phase 0 spike, `hex dev gaze` (macOS debug builds;
+# docs/plans/look-to-focus.md). Off by default: ONNX Runtime adds about
+# 20 MB and downloads its library at build time.
+gaze = ["dep:ort"]
 
 # Shipped executables carry no symbol table (about 11 MB on Linux). Panic
 # backtraces lose function names; debug builds keep them.
@@ -92,6 +96,7 @@ objc2-core-foundation = "0.3.2"
 objc2-foundation = "0.3.2"
 objc2-quartz-core = { version = "0.3.2", features = ["CALayer"] }
 objc2-service-management = { version = "0.3.2", features = ["SMAppService"] }
+ort = { version = "=2.0.0-rc.12", optional = true }
 ratatui = "0.30.2"
 screencapturekit = { version = "=11.0.0", features = ["macos_15_0"] }
 
