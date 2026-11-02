@@ -3,6 +3,7 @@
 //! primary display, fits a calibration, measures it on dots it didn't see,
 //! and reports against the plan's go/no-go targets; `track` draws the gaze.
 
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
@@ -15,10 +16,11 @@ use rune::{
     App, AppSpec, Cx, DisplayTarget, El, OverlayHandle, OverlayOptions, OverlayPlacement,
     OverlaySpec, RunOptions, WindowSpec, el, text,
 };
+use serde::Serialize;
 
 use super::calibration::{self, Calibration, RIDGE, Sample};
 use super::camera::{Camera, Display, Frame};
-use super::features::{Features, features};
+use super::features::{Features, Point, features};
 use super::fixation::{Fixations, SMOOTHING, Smoother};
 use super::landmarks::FaceMesh;
 
@@ -30,7 +32,12 @@ pub(crate) enum GazeCommand {
         seconds: u64,
     },
     /// Fit a calibration on 9 dots, measure it on 5 others, and save it.
-    Calibrate,
+    Calibrate {
+        /// Also write every dot's samples (features and face points, no
+        /// images) to this JSON file, for analysis.
+        #[arg(long)]
+        save: Option<PathBuf>,
+    },
     /// Draw where the saved calibration says you're looking.
     Track {
         #[arg(long, default_value_t = 30)]
@@ -41,7 +48,7 @@ pub(crate) enum GazeCommand {
 pub(crate) fn run(command: GazeCommand) -> Result<()> {
     match command {
         GazeCommand::Probe { seconds } => probe(Duration::from_secs(seconds)),
-        GazeCommand::Calibrate => calibrate(),
+        GazeCommand::Calibrate { save } => calibrate(save.as_deref()),
         GazeCommand::Track { seconds } => track(Duration::from_secs(seconds)),
     }
 }
@@ -73,10 +80,12 @@ const TARGET_RATE: f64 = 15.0;
 const TARGET_CORE: f64 = 0.15;
 
 /// One face's features, as the tracker read them.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Observation {
     at: Instant,
     features: Features,
+    points: Vec<Point>,
+    frame: (u32, u32),
 }
 
 /// What the tracker has measured so far.
@@ -202,22 +211,25 @@ fn track_frames(
             }
             inference = Some(started.elapsed().as_secs_f64() * 1000.0);
         }
-        let features = found
-            .as_ref()
-            .and_then(|mesh| features(&mesh.points, (frame.width, frame.height)));
+        let size = (frame.width, frame.height);
+        let observed = found
+            .and_then(|mesh| features(&mesh.points, size).map(|features| (features, mesh.points)));
         {
             let mut stats = stats.lock().unwrap_or_else(|e| e.into_inner());
             stats.frames += 1;
             stats.faces += u64::from(frame.face.is_some());
-            stats.meshes += u64::from(features.is_some());
+            stats.meshes += u64::from(observed.is_some());
             stats.inference_ms.extend(inference);
             stats.thread_cpu_s = thread_cpu_seconds() - cpu_start;
         }
-        if let Some(features) = features {
+        if let Some((features, points)) = observed {
             // A full queue means nobody is reading yet; drop the frame.
-            if let Err(TrySendError::Disconnected(_)) =
-                sender.try_send(Observation { at, features })
-            {
+            if let Err(TrySendError::Disconnected(_)) = sender.try_send(Observation {
+                at,
+                features,
+                points,
+                frame: size,
+            }) {
                 return;
             }
         }
@@ -370,7 +382,7 @@ fn run_dots(
     display: &Display,
     dots: &[(f64, f64)],
     note: &str,
-) -> Vec<Vec<Sample>> {
+) -> Vec<Dot> {
     dots.iter()
         .enumerate()
         .map(|(index, (fx, fy))| {
@@ -388,28 +400,91 @@ fn run_dots(
             std::thread::sleep(SETTLE);
             tracker.drain();
             show(overlay, |d| d.collecting = true);
-            let target = (display.x + local.0, display.y + local.1);
-            tracker
-                .collect(Instant::now() + COLLECT)
-                .into_iter()
-                .map(|o| Sample {
-                    features: o.features,
-                    target,
-                })
-                .collect()
+            Dot {
+                target: (display.x + local.0, display.y + local.1),
+                observations: tracker.collect(Instant::now() + COLLECT),
+            }
         })
         .collect()
 }
 
-fn calibrate() -> Result<()> {
+/// One dot and what the tracker saw while it showed.
+struct Dot {
+    /// Points in Rune's global space.
+    target: (f64, f64),
+    observations: Vec<Observation>,
+}
+
+impl Dot {
+    fn samples(&self) -> Vec<Sample> {
+        self.observations
+            .iter()
+            .map(|o| Sample {
+                features: o.features,
+                target: self.target,
+            })
+            .collect()
+    }
+}
+
+/// `calibrate --save`'s file: geometry only, never a camera image.
+#[derive(Serialize)]
+struct Recording<'a> {
+    camera: &'a str,
+    /// The primary display: origin and size in points, width in mm.
+    display: [f64; 5],
+    fit: Vec<RecordedDot>,
+    check: Vec<RecordedDot>,
+}
+
+#[derive(Serialize)]
+struct RecordedDot {
+    target: (f64, f64),
+    samples: Vec<RecordedSample>,
+}
+
+#[derive(Serialize)]
+struct RecordedSample {
+    /// Seconds since the calibration started.
+    time: f64,
+    frame: (u32, u32),
+    features: Features,
+    /// Face Mesh's 478 points in frame pixels.
+    points: Vec<Point>,
+}
+
+fn record(dots: &[Dot], started: Instant) -> Vec<RecordedDot> {
+    dots.iter()
+        .map(|dot| RecordedDot {
+            target: dot.target,
+            samples: dot
+                .observations
+                .iter()
+                .map(|o| RecordedSample {
+                    time: o.at.saturating_duration_since(started).as_secs_f64(),
+                    frame: o.frame,
+                    features: o.features,
+                    points: o.points.clone(),
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+/// A calibration's report and the dots it fitted and checked.
+type Finished = (Report, Vec<Dot>, Vec<Dot>);
+
+fn calibrate(save: Option<&Path>) -> Result<()> {
     let display = Display::primary();
     let tracker = Tracker::start()?;
+    let camera = tracker.camera_name.clone();
     println!(
         "Camera: {}. Look at each dot until the next one shows.",
         tracker.camera_name
     );
-    let report: Arc<Mutex<Option<Report>>> = Arc::default();
+    let report: Arc<Mutex<Option<Finished>>> = Arc::default();
     let out = report.clone();
+    let started = Instant::now();
     with_overlay(move |overlay| {
         show(&overlay, |d| {
             d.note = "Sit as you normally do. Look at each dot.".into();
@@ -417,8 +492,8 @@ fn calibrate() -> Result<()> {
         std::thread::sleep(Duration::from_secs(2));
         let fit = run_dots(&tracker, &overlay, &display, &FIT_DOTS, "Calibrating");
         let check = run_dots(&tracker, &overlay, &display, &CHECK_DOTS, "Checking");
-        *out.lock().unwrap_or_else(|e| e.into_inner()) =
-            Some(Report::new(&fit, &check, tracker.summary()));
+        let report = Report::new(&fit, &check, tracker.summary());
+        *out.lock().unwrap_or_else(|e| e.into_inner()) = Some((report, fit, check));
         Ok(())
     })?;
     let report = report
@@ -426,8 +501,24 @@ fn calibrate() -> Result<()> {
         .unwrap_or_else(|e| e.into_inner())
         .take()
         .ok_or_else(|| eyre!("calibration didn't finish"))?;
-    report.print(&display)?;
-    Ok(())
+    let (report, fit, check) = report;
+    if let Some(path) = save {
+        let recording = Recording {
+            camera: &camera,
+            display: [
+                display.x,
+                display.y,
+                display.width,
+                display.height,
+                display.width_mm,
+            ],
+            fit: record(&fit, started),
+            check: record(&check, started),
+        };
+        std::fs::write(path, serde_json::to_vec(&recording)?)?;
+        println!("Wrote the samples to {}", path.display());
+    }
+    report.print(&display)
 }
 
 struct Report {
@@ -441,13 +532,14 @@ struct Report {
 }
 
 impl Report {
-    fn new(fit: &[Vec<Sample>], check: &[Vec<Sample>], summary: Summary) -> Self {
-        let fit_samples: Vec<Sample> = fit.iter().flatten().copied().collect();
+    fn new(fit: &[Dot], check: &[Dot], summary: Summary) -> Self {
+        let fit_samples: Vec<Sample> = fit.iter().flat_map(Dot::samples).collect();
+        let check: Vec<Vec<Sample>> = check.iter().map(Dot::samples).collect();
         let calibration = Calibration::fit(&fit_samples, RIDGE);
         let mut raw = Vec::new();
         let mut smoothed = Vec::new();
         if let Some(calibration) = &calibration {
-            for dot in check {
+            for dot in &check {
                 raw.extend(calibration::errors(calibration, dot));
                 // Each dot's samples in order through a fresh smoother, as a
                 // fixation would see them; its first few are still settling.
