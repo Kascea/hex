@@ -301,7 +301,9 @@ fn view(dots: &Dots, cx: &mut Cx<Dots>) -> El {
         } else {
             TARGET_DOT
         };
-        root = root.child(dot(target, size, "target").fill(k.c.text_base));
+        // White in either appearance: the scrim is dark in both, and a
+        // theme's text colour is dark in light mode.
+        root = root.child(dot(target, size, "target").fill(rune::Color::WHITE));
     }
     if let Some(gaze) = dots.gaze {
         root = root.child(dot(gaze, GAZE_DOT, "gaze").fill(k.c.bg_accent));
