@@ -53,13 +53,15 @@ override shipped behavior.
   evaluation of Apple SpeechTranscriber vs Moonshine for live meeting drafts.
 - [`plans/granola-import.md`](plans/granola-import.md): research on importing
   historical Granola meetings into `hex mcp`.
-- [`plans/look-to-focus.md`](plans/look-to-focus.md): design, not built;
-  webcam gaze chooses the text field a dictation pastes into (Labs).
+- [`plans/look-to-focus.md`](plans/look-to-focus.md): phase 0 spike in
+  progress; webcam gaze chooses the text field a dictation pastes into (Labs).
 
 When a plan disagrees with `AGENTS.md` about shipped behavior, update the plan.
 
 ## Research And Archives
 
+- [`research/gaze-spike.md`](research/gaze-spike.md): Look to focus's
+  phase 0 runtime and accuracy measurements.
 - [`research/transcription-benchmark.md`](research/transcription-benchmark.md):
   historical benchmark method and measurements.
 - [`../prototypes/app-shell/README.md`](../prototypes/app-shell/README.md):

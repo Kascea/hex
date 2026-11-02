@@ -1,8 +1,10 @@
 # Look To Focus
 
-Status: design, not built. Proposed 2026-11-02. Nothing in this plan ships
-until phase 0's measurement says webcam gaze is good enough; Kit decides
-whether it continues past that.
+Status: phase 0 in progress (`hex dev gaze`, behind the off-by-default
+`gaze` feature; measurements in
+[`research/gaze-spike.md`](../research/gaze-spike.md)). Proposed 2026-11-02.
+Nothing in this plan ships until phase 0's measurement says webcam gaze is
+good enough; Kit decides whether it continues past that.
 
 Goal: dictate into the text field you're looking at. Look at a field, press
 the dictation shortcut, and Hex focuses that field before it pastes, with no
@@ -54,7 +56,8 @@ Accessibility rather than trusting the raw point.
 ```ts
 gaze worker thread (utility QoS, bounded; never on the audio or UI thread)
 ├── camera        latest frame only, ~30 Hz, 640×480; older frames dropped
-├── face          BlazeFace short-range -> face box (Apache-2.0, ~0.2 MB)
+├── face          face box: Apple Vision on macOS (the spike); BlazeFace
+│                 short-range (Apache-2.0, ~0.2 MB) on Windows and Linux
 ├── landmarks     Face Mesh V2 on the crop -> 478 points incl. 10 iris (Apache-2.0, ~3 MB)
 ├── features      iris centre relative to each eye's corners and lids,
 │                 head pose from a fixed 3D face model (PnP), eye openness
@@ -143,8 +146,8 @@ When built, these join `AGENTS.md`:
 
 ```ts
 src/gaze/              // new capability folder
-├── camera.rs          macOS AVFoundation capture first (Swift bridge, like apple_speech.swift)
-├── landmarks.rs       face crop + Face Mesh on the chosen runtime
+├── camera.rs          macOS AVFoundation capture and Vision face box (src/gaze.swift)
+├── landmarks.rs       face crop + Face Mesh on ONNX Runtime
 ├── features.rs        pure: landmarks -> feature vector (tested on fixtures)
 ├── calibration.rs     pure: fit, predict, validation error, persistence
 ├── fixation.rs        pure: One Euro filter + fixation detection
@@ -162,8 +165,8 @@ rune_ui/gaze_calibration.rs  full-screen calibration overlay
   `Dev` until phase 1 passes, macOS only in `on_this_os` with a
   `platform::DIFFERENCES` reason: pending), its Labs row with Calibrate…,
   and `hex settings` keys. `hex gaze calibrate|status` for the CLI.
-- Inference runtime is an open question (below); the choice is made in
-  phase 0 by measurement.
+- Inference runs on ONNX Runtime's CPU provider (`ort`), measured in
+  phase 0: 6.7 ms a frame against `tract`'s 50 ms and CoreML's 22 ms.
 
 ## Phases
 
@@ -172,7 +175,8 @@ rune_ui/gaze_calibration.rs  full-screen calibration overlay
    prints error and cost. Go/no-go on the developer's Mac with a built-in
    camera at normal distance:
    - median validation error ≤ 3 cm and 90th percentile ≤ 5 cm,
-   - ≥ 15 gaze samples a second at under 15% of one core,
+   - ≥ 15 gaze samples a second (cost is reported, not judged: the camera
+     runs only around a press, so accuracy comes first),
    - camera start to first fixation ≤ 600 ms (else "Keep camera ready"),
    - the same numbers with glasses and in dim light, written down either way.
    Results go in `docs/research/gaze-spike.md`.
@@ -186,10 +190,9 @@ rune_ui/gaze_calibration.rs  full-screen calibration overlay
 
 ## Open Questions
 
-- Runtime: `tract` (pure Rust, no native library, CPU only) vs `ort`
-  (ONNX Runtime, faster with CoreML/DirectML, but a large native library
-  in every build). Start with `tract`; switch only if phase 0 misses the
-  cost budget.
+- `ort` adds about 20 MB and a build-time download of its library (which
+  a Nix build can't do). How it ships, if it ships, is open; until then it
+  stays behind the `gaze` feature.
 - Does focus-by-Accessibility work in Electron and web text fields often
   enough, or will the click fallback be the common path?
 - Should the HUD show where Hex thinks you're looking during the hold, so a

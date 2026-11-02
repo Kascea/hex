@@ -59,6 +59,12 @@ fn main() {
     println!("cargo:rustc-link-arg=-Wl,-weak_framework,FoundationModels");
     compile_swift_bridge("calendar", "HEXCalendarBridge", &[]);
     println!("cargo:rustc-link-lib=framework=EventKit");
+    if std::env::var_os("CARGO_FEATURE_GAZE").is_some() {
+        compile_swift_bridge("gaze", "HEXGazeBridge", &[]);
+        for framework in ["AVFoundation", "CoreMedia", "CoreVideo", "Vision"] {
+            println!("cargo:rustc-link-lib=framework={framework}");
+        }
+    }
     compile_permission_guide();
     println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
     for runtime in ["swift-5.5/macosx", "swift/macosx"] {
