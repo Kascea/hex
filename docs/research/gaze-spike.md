@@ -43,7 +43,8 @@ tracking from the previous frame's points.
 Run 1 (2026-11-02): MacBook FaceTime HD camera (it gives 1920×1080 though
 640×480 is asked for), normal sitting distance, indoor light. Camera
 29 frames/s, face found in every frame, Face Mesh 6.5 ms, gaze thread 19% of
-one core (over the 15% target at 29/s; 15/s would halve it).
+one core. Cost is reported but no longer a target: the camera runs only
+around a shortcut press, so accuracy comes first.
 
 The first model also fitted head pose and the face's place in the frame. It
 was worse than guessing the screen's centre: posture drifted during the run

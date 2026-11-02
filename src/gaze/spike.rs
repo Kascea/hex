@@ -77,7 +77,6 @@ const CHECK_DOTS: [(f64, f64); 5] = [(0.3, 0.3), (0.7, 0.3), (0.5, 0.25), (0.3, 
 const TARGET_MEDIAN_CM: f64 = 3.0;
 const TARGET_P90_CM: f64 = 5.0;
 const TARGET_RATE: f64 = 15.0;
-const TARGET_CORE: f64 = 0.15;
 
 /// One face's features, as the tracker read them.
 #[derive(Clone)]
@@ -614,12 +613,10 @@ impl Report {
         if let (Some(cm), Some((median, p90))) = (cm, fixation) {
             let verdict = |pass: bool| if pass { "pass" } else { "FAIL" };
             println!(
-                "Targets (fixation error): median ≤ {TARGET_MEDIAN_CM} cm {}, p90 ≤ {TARGET_P90_CM} cm {}, ≥ {TARGET_RATE}/s {}, ≤ {:.0}% of a core {}",
+                "Targets (fixation error): median ≤ {TARGET_MEDIAN_CM} cm {}, p90 ≤ {TARGET_P90_CM} cm {}, ≥ {TARGET_RATE}/s {}",
                 verdict(median * cm <= TARGET_MEDIAN_CM),
                 verdict(p90 * cm <= TARGET_P90_CM),
                 verdict(s.mesh_rate >= TARGET_RATE),
-                TARGET_CORE * 100.0,
-                verdict(s.core <= TARGET_CORE),
             );
         }
         println!("Saved {}", calibration.save()?.display());

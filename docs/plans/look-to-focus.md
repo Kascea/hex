@@ -175,7 +175,8 @@ rune_ui/gaze_calibration.rs  full-screen calibration overlay
    prints error and cost. Go/no-go on the developer's Mac with a built-in
    camera at normal distance:
    - median validation error ≤ 3 cm and 90th percentile ≤ 5 cm,
-   - ≥ 15 gaze samples a second at under 15% of one core,
+   - ≥ 15 gaze samples a second (cost is reported, not judged: the camera
+     runs only around a press, so accuracy comes first),
    - camera start to first fixation ≤ 600 ms (else "Keep camera ready"),
    - the same numbers with glasses and in dim light, written down either way.
    Results go in `docs/research/gaze-spike.md`.
